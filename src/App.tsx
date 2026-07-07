@@ -6,7 +6,7 @@ export default function App() {
       <header className="app-header">
         <h1>Task Board</h1>
         <p className="hint">
-          스타터 baseline입니다. 요구사항은 <strong>과제 명세서</strong>를 참고하세요.
+          느리고 가끔 실패하는 서버(mock API) 위에서도 끊김 없이 동작하는 칸반 보드
         </p>
       </header>
       <Board />
