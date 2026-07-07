@@ -251,7 +251,8 @@ body {
   font-size: 13px;
   border-radius: 6px;
   box-shadow: 0 4px 12px rgba(9, 30, 66, 0.3);
-  z-index: 100;
+  /* 모달(200)이 열려 있어도 실패 알림은 항상 보여야 한다 */
+  z-index: 300;
 }
 
 .toast-close {
