@@ -16,3 +16,6 @@ pnpm-debug.log*
 .vscode/*
 !.vscode/extensions.json
 .idea
+
+# 개인 학습 노트 (저장소에 올리지 않음)
+study/

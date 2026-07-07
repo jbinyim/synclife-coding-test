@@ -38,6 +38,45 @@ body {
   margin: 4px 0 16px;
 }
 
+/* 로드 상태(로딩 / 에러 / 빈 상태) 화면 */
+.board-state {
+  padding: 48px 16px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.board-error p {
+  margin: 0 0 8px;
+}
+
+.board-error-message {
+  font-size: 13px;
+}
+
+.retry-btn {
+  margin-top: 8px;
+  padding: 6px 16px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--card-bg);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.retry-btn:hover {
+  background: var(--col-bg);
+}
+
+.column-empty {
+  margin: 0;
+  padding: 16px 0;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .board {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
