@@ -69,6 +69,27 @@ export function useTasks() {
   }, [])
 
   /**
+   * 이벤트 핸들러·비동기 콜백(비렌더 타이밍)에서 최신 서버 상태를 읽기 위한 미러 ref.
+   * setState updater 안에서 부수효과(전송)를 일으키면 StrictMode 가 updater 를
+   * 2번 실행해 요청이 중복되므로, ref 로 읽고 부수효과는 밖에서 처리한다.
+   */
+  const stateRef = useRef(state)
+  stateRef.current = state
+
+  /**
+   * 실패 알림용 태스크 제목. 재시도 정책이 "사용자 재조작"이라서
+   * 무엇이 실패했는지 알려줘야 사용자가 대상을 찾아 다시 조작할 수 있다.
+   * (가상화 이후 롤백된 카드가 화면 밖일 수 있음)
+   */
+  const titleOf = useCallback((id: string): string | null => {
+    const current = stateRef.current
+    if (current.phase !== 'ready') return null
+    const title = current.tasks.find((t) => t.id === id)?.title
+    if (!title) return null
+    return title.length > 20 ? `${title.slice(0, 20)}…` : title
+  }, [])
+
+  /**
    * 전송 드라이버. version 은 체인으로 전달한다:
    * 성공하면 응답의 새 version, 실패(500)면 서버가 안 바뀌었으므로 기존 version 을
    * 대기 중인 다음 요청에 그대로 넘긴다. state 를 다시 읽지 않으므로
@@ -78,6 +99,7 @@ export function useTasks() {
     async (id: string, patch: TaskPatch, version: number) => {
       let nextVersion = version
       let failed = false
+      let conflicted = false
       try {
         const updated = await updateTask(id, { ...patch, version })
         confirmServer(updated)
@@ -86,6 +108,7 @@ export function useTasks() {
         failed = true
         // 409: 다른 곳에서 먼저 수정됨 → 서버 최신 상태를 수용 (전용 UX 는 P2)
         if (err instanceof ApiError && err.status === 409) {
+          conflicted = true
           const current = (err.payload as { current?: Task } | null)?.current
           if (current) {
             confirmServer(current)
@@ -107,18 +130,26 @@ export function useTasks() {
       // 성공: 서버 확정 상태가 이미 같은 값이므로 화면 변화 없음.
       // 실패: 마지막 서버 확정 상태로 화면이 돌아감 = 롤백.
       setOverlay((o) => clearOverlay(o, id))
-      if (failed) setToast('변경을 저장하지 못해 이전 상태로 되돌렸습니다.')
+      if (failed) {
+        const title = titleOf(id)
+        if (conflicted) {
+          // 409 는 "되돌림"이 아니라 서버 최신 상태로 "갱신"된 것 — 동작 그대로 알린다
+          setToast(
+            title
+              ? `‘${title}’이(가) 다른 곳에서 먼저 수정되어 서버의 최신 상태로 갱신했습니다.`
+              : '다른 곳에서 먼저 수정되어 서버의 최신 상태로 갱신했습니다.',
+          )
+        } else {
+          setToast(
+            title
+              ? `‘${title}’ 변경을 저장하지 못해 이전 상태로 되돌렸습니다.`
+              : '변경을 저장하지 못해 이전 상태로 되돌렸습니다.',
+          )
+        }
+      }
     },
-    [confirmServer],
+    [confirmServer, titleOf],
   )
-
-  /**
-   * 이벤트 핸들러(비렌더 타이밍)에서 최신 서버 상태를 읽기 위한 미러 ref.
-   * setState updater 안에서 부수효과(전송)를 일으키면 StrictMode 가 updater 를
-   * 2번 실행해 요청이 중복되므로, ref 로 읽고 부수효과는 밖에서 처리한다.
-   */
-  const stateRef = useRef(state)
-  stateRef.current = state
 
   /**
    * 낙관적 뮤테이션 진입점. UI 에 먼저 반영하고(overlay) 서버 전송은 큐가 제어한다.

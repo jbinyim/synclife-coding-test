@@ -166,6 +166,20 @@ describe('useTasks — 낙관적 뮤테이션 (P1-2)', () => {
 
     expect(findView(result, 'a')).toMatchObject({ status: 'todo', version: 5 }) // 롤백
     expect(result.current.toast).toContain('되돌렸')
+    // 재시도가 "사용자 재조작"이므로 무엇이 실패했는지 제목을 알려줘야 한다
+    expect(result.current.toast).toContain('Task a')
+  })
+
+  it('실패 토스트의 긴 제목은 20자로 말줄임된다', async () => {
+    const longTitle = '아주아주아주아주아주아주아주 긴 제목의 태스크입니다'
+    const { result } = await setup([make('a', { title: longTitle, version: 1 })])
+    const deferreds = deferUpdates()
+
+    act(() => result.current.mutateTask('a', { status: 'done' }))
+    await act(async () => deferreds[0].reject(new Error('실패')))
+
+    expect(result.current.toast).toContain(`${longTitle.slice(0, 20)}…`)
+    expect(result.current.toast).not.toContain(longTitle)
   })
 
   it('실패 롤백이 다른 태스크의 낙관적 변경을 건드리지 않는다', async () => {
@@ -232,5 +246,8 @@ describe('useTasks — 낙관적 뮤테이션 (P1-2)', () => {
 
     // 낙관적 변경은 버리고 서버가 알려준 최신 상태로 정착
     expect(findView(result, 'a')).toMatchObject({ status: 'in-progress', version: 9 })
+    // 409 는 롤백이 아니라 서버 최신 상태로의 "갱신"임을 그대로 알린다
+    expect(result.current.toast).toContain('갱신')
+    expect(result.current.toast).toContain('Task a')
   })
 })
