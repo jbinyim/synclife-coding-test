@@ -55,6 +55,36 @@ export function upsertTask(tasks: Task[], updated: Task): Task[] {
   return tasks.map((t) => (t.id === updated.id ? updated : t))
 }
 
+/** 생성 확정된 태스크를 맨 앞에 삽입한다 (mock 서버도 맨 앞에 삽입: handlers.ts POST) */
+export function insertTask(tasks: Task[], created: Task): Task[] {
+  return [created, ...tasks]
+}
+
+/** 서버에서 삭제 확정된 태스크를 제거한다 */
+export function removeTaskById(tasks: Task[], id: string): Task[] {
+  return tasks.filter((t) => t.id !== id)
+}
+
+// ───────────────────────── 화면 합성 ─────────────────────────
+
+/**
+ * 화면에 그릴 최종 목록을 합성한다.
+ *   서버 확정 상태 + 이동/수정 overlay − 삭제 대기 + 생성 대기(맨 앞)
+ * 생성/삭제의 롤백도 이동/수정과 같은 원리다:
+ * pending 목록에서 빼기만 하면 화면이 서버 확정 상태로 돌아간다.
+ */
+export function composeView(
+  serverTasks: Task[],
+  overlay: Overlay,
+  pendingCreates: Task[],
+  pendingDeletes: ReadonlySet<string>,
+): Task[] {
+  let view = applyOverlay(serverTasks, overlay)
+  if (pendingDeletes.size > 0) view = view.filter((t) => !pendingDeletes.has(t.id))
+  if (pendingCreates.length > 0) view = [...pendingCreates, ...view]
+  return view
+}
+
 // ───────────────────────── 태스크별 직렬 큐 ─────────────────────────
 
 export type QueueEntry = {

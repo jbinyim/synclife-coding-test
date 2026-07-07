@@ -4,6 +4,9 @@ import {
   mergeOverlay,
   clearOverlay,
   upsertTask,
+  insertTask,
+  removeTaskById,
+  composeView,
   enqueue,
   settle,
   type QueueState,
@@ -77,6 +80,55 @@ describe('upsertTask', () => {
     const next = upsertTask(tasks, updated)
     expect(next.find((t) => t.id === 'a')).toEqual(updated)
     expect(next.find((t) => t.id === 'b')).toEqual(make('b'))
+  })
+})
+
+describe('insertTask / removeTaskById', () => {
+  it('생성 확정 태스크는 맨 앞에 삽입된다 (mock 서버와 동일한 순서)', () => {
+    const next = insertTask([make('a')], make('new'))
+    expect(next.map((t) => t.id)).toEqual(['new', 'a'])
+  })
+
+  it('삭제 확정 시 해당 태스크만 제거된다', () => {
+    const next = removeTaskById([make('a'), make('b')], 'a')
+    expect(next.map((t) => t.id)).toEqual(['b'])
+  })
+})
+
+describe('composeView — 화면 합성 (생성/삭제 낙관적 반영)', () => {
+  const none: ReadonlySet<string> = new Set()
+
+  it('생성 대기 태스크는 맨 앞에 표시된다', () => {
+    const view = composeView([make('a')], emptyOverlay, [make('temp-1')], none)
+    expect(view.map((t) => t.id)).toEqual(['temp-1', 'a'])
+  })
+
+  it('삭제 대기 태스크는 화면에서 제외된다', () => {
+    const view = composeView([make('a'), make('b')], emptyOverlay, [], new Set(['a']))
+    expect(view.map((t) => t.id)).toEqual(['b'])
+  })
+
+  it('overlay + 생성 + 삭제가 함께 적용된다', () => {
+    const overlay = mergeOverlay(emptyOverlay, 'a', { status: 'done' })
+    const view = composeView(
+      [make('a'), make('b')],
+      overlay,
+      [make('temp-1')],
+      new Set(['b']),
+    )
+    expect(view.map((t) => t.id)).toEqual(['temp-1', 'a'])
+    expect(view.find((t) => t.id === 'a')?.status).toBe('done')
+  })
+
+  it('pending 이 모두 비어 있으면 서버 배열을 그대로 반환한다 (참조 유지 → memo 유효)', () => {
+    const server = [make('a')]
+    expect(composeView(server, emptyOverlay, [], none)).toBe(server)
+  })
+
+  it('삭제 대기에서 빼기만 하면 화면에 다시 나타난다 (삭제 롤백)', () => {
+    const server = [make('a')]
+    expect(composeView(server, emptyOverlay, [], new Set(['a']))).toHaveLength(0)
+    expect(composeView(server, emptyOverlay, [], none)).toHaveLength(1)
   })
 })
 
