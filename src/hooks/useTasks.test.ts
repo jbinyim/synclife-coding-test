@@ -2,7 +2,7 @@ import { StrictMode } from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
 import { useTasks } from './useTasks'
-import { getTasks, updateTask, ApiError } from '../api/client'
+import { getTasks, createTask, updateTask, deleteTask, ApiError } from '../api/client'
 import type { Task } from '../types'
 
 vi.mock('../api/client', () => {
@@ -16,10 +16,18 @@ vi.mock('../api/client', () => {
       this.payload = payload
     }
   }
-  return { getTasks: vi.fn(), updateTask: vi.fn(), ApiError: MockApiError }
+  return {
+    getTasks: vi.fn(),
+    createTask: vi.fn(),
+    updateTask: vi.fn(),
+    deleteTask: vi.fn(),
+    ApiError: MockApiError,
+  }
 })
 const mockedGetTasks = vi.mocked(getTasks)
+const mockedCreateTask = vi.mocked(createTask)
 const mockedUpdateTask = vi.mocked(updateTask)
+const mockedDeleteTask = vi.mocked(deleteTask)
 
 const make = (id: string, over: Partial<Task> = {}): Task => ({
   id,
@@ -249,5 +257,124 @@ describe('useTasks — 낙관적 뮤테이션 (P1-2)', () => {
     // 409 는 롤백이 아니라 서버 최신 상태로의 "갱신"임을 그대로 알린다
     expect(result.current.toast).toContain('갱신')
     expect(result.current.toast).toContain('Task a')
+  })
+})
+
+describe('useTasks — 낙관적 생성/삭제 (P1-5)', () => {
+  async function setup(initial: Task[]) {
+    mockedGetTasks.mockResolvedValue(initial)
+    const rendered = renderHook(() => useTasks())
+    await waitFor(() => expect(rendered.result.current.state.phase).toBe('ready'))
+    return rendered
+  }
+
+  const input = { title: '새 작업', priority: 'high', status: 'todo' } as const
+
+  it('생성은 서버 응답 전에 temp 태스크로 즉시 맨 앞에 표시된다', async () => {
+    const { result } = await setup([make('a')])
+    mockedCreateTask.mockImplementation(() => new Promise<Task>(() => {})) // 응답 보류
+
+    act(() => result.current.createNewTask(input))
+
+    expect(result.current.viewTasks[0]).toMatchObject({ title: '새 작업', status: 'todo' })
+    expect(result.current.viewTasks[0].id.startsWith('temp-')).toBe(true)
+    expect(mockedCreateTask).toHaveBeenCalledWith(input)
+  })
+
+  it('생성 성공 시 temp 가 서버 태스크(진짜 id·version)로 교체된다', async () => {
+    const { result } = await setup([make('a')])
+    let resolve!: (t: Task) => void
+    mockedCreateTask.mockImplementation(() => new Promise<Task>((r) => (resolve = r)))
+
+    act(() => result.current.createNewTask(input))
+    await act(async () => resolve(make('server-1', { title: '새 작업', version: 1 })))
+
+    expect(result.current.viewTasks[0]).toMatchObject({ id: 'server-1', version: 1 })
+    expect(result.current.viewTasks.some((t) => t.id.startsWith('temp-'))).toBe(false)
+    expect(result.current.toast).toBeNull()
+  })
+
+  it('생성 실패 시 temp 가 제거되고(롤백) 제목이 담긴 토스트가 뜬다', async () => {
+    const { result } = await setup([make('a')])
+    let reject!: (e: unknown) => void
+    mockedCreateTask.mockImplementation(() => new Promise<Task>((_, r) => (reject = r)))
+
+    act(() => result.current.createNewTask(input))
+    expect(result.current.viewTasks).toHaveLength(2)
+
+    await act(async () => reject(new Error('실패')))
+
+    expect(result.current.viewTasks).toHaveLength(1) // temp 제거 = 롤백
+    expect(result.current.toast).toContain('새 작업')
+    expect(result.current.toast).toContain('생성에 실패')
+  })
+
+  it('삭제는 서버 응답 전에 화면에서 즉시 사라진다', async () => {
+    const { result } = await setup([make('a'), make('b')])
+    mockedDeleteTask.mockImplementation(() => new Promise<void>(() => {}))
+
+    act(() => result.current.removeTask('a'))
+
+    expect(findView(result, 'a')).toBeUndefined()
+    expect(findView(result, 'b')).toBeDefined()
+    expect(mockedDeleteTask).toHaveBeenCalledWith('a')
+  })
+
+  it('삭제 성공 시 서버 상태에서도 제거된다', async () => {
+    const { result } = await setup([make('a')])
+    let resolve!: () => void
+    mockedDeleteTask.mockImplementation(() => new Promise<void>((r) => (resolve = r)))
+
+    act(() => result.current.removeTask('a'))
+    await act(async () => resolve())
+
+    expect(result.current.viewTasks).toHaveLength(0)
+    expect(result.current.toast).toBeNull()
+  })
+
+  it('삭제 실패 시 카드가 복구되고 제목이 담긴 토스트가 뜬다', async () => {
+    const { result } = await setup([make('a')])
+    let reject!: (e: unknown) => void
+    mockedDeleteTask.mockImplementation(() => new Promise<void>((_, r) => (reject = r)))
+
+    act(() => result.current.removeTask('a'))
+    expect(findView(result, 'a')).toBeUndefined() // 낙관적 숨김
+
+    await act(async () => reject(new Error('실패')))
+
+    expect(findView(result, 'a')).toBeDefined() // 복구
+    expect(result.current.toast).toContain('Task a')
+    expect(result.current.toast).toContain('삭제에 실패')
+  })
+
+  it('삭제 대기 중인 태스크는 이동/수정이 차단된다', async () => {
+    const { result } = await setup([make('a')])
+    mockedDeleteTask.mockImplementation(() => new Promise<void>(() => {}))
+
+    act(() => result.current.removeTask('a'))
+    act(() => result.current.mutateTask('a', { status: 'done' }))
+
+    expect(mockedUpdateTask).not.toHaveBeenCalled()
+  })
+
+  it('수정은 이동과 같은 낙관적 PATCH 파이프라인을 탄다', async () => {
+    const { result } = await setup([make('a', { version: 3 })])
+    const deferreds = deferUpdates()
+
+    act(() =>
+      result.current.mutateTask('a', { title: '수정된 제목', priority: 'low' }),
+    )
+
+    expect(findView(result, 'a')).toMatchObject({ title: '수정된 제목', priority: 'low' })
+    expect(mockedUpdateTask).toHaveBeenCalledWith('a', {
+      title: '수정된 제목',
+      priority: 'low',
+      version: 3,
+    })
+
+    await act(async () =>
+      deferreds[0].resolve(make('a', { title: '수정된 제목', priority: 'low', version: 4 })),
+    )
+    expect(findView(result, 'a')?.version).toBe(4)
   })
 })

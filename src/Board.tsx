@@ -1,9 +1,11 @@
-import { useDeferredValue, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useState } from 'react'
 import type { Task, Status } from './types'
-import { useTasks } from './hooks/useTasks'
+import { useTasks, type NewTaskInput } from './hooks/useTasks'
 import { filterByTitle } from './lib/tasks'
 import { Column } from './components/Column'
 import { Toast } from './components/Toast'
+import { TaskFormModal } from './components/TaskFormModal'
+import { ConfirmDialog } from './components/ConfirmDialog'
 
 const COLUMNS: { status: Status; title: string }[] = [
   { status: 'todo', title: 'To Do' },
@@ -12,15 +14,37 @@ const COLUMNS: { status: Status; title: string }[] = [
 ]
 
 export default function Board() {
-  const { state, viewTasks, retry, mutateTask, toast, dismissToast } = useTasks()
+  const { state, viewTasks, retry, mutateTask, createNewTask, removeTask, toast, dismissToast } =
+    useTasks()
 
   const [query, setQuery] = useState('')
   // 타이핑(급함)과 5,000개 필터링(덜 급함)의 우선순위를 분리해 입력이 끊기지 않게 한다
   const deferredQuery = useDeferredValue(query)
 
+  /** 폼 모달: closed | 생성 | 수정(대상 태스크) */
+  const [form, setForm] = useState<{ open: boolean; task: Task | null }>({
+    open: false,
+    task: null,
+  })
+  /** 삭제 확인 다이얼로그 대상 */
+  const [deleteTarget, setDeleteTarget] = useState<Task | null>(null)
+
   // 낙관적 이동: overlay 에 즉시 반영되고, 서버 전송·롤백은 useTasks 큐가 처리한다.
   const moveTask = (id: string, status: Status) => {
     mutateTask(id, { status })
+  }
+
+  // Card 가 memo 이므로 참조를 고정해야 리렌더 차단이 유지된다
+  const openEdit = useCallback((task: Task) => setForm({ open: true, task }), [])
+  const requestDelete = useCallback((task: Task) => setDeleteTarget(task), [])
+
+  const handleFormSubmit = (input: NewTaskInput) => {
+    if (form.task) {
+      // 수정: 이동과 같은 낙관적 PATCH 파이프라인. 설명을 비우면 '' 로 지운다
+      mutateTask(form.task.id, { ...input, description: input.description ?? '' })
+    } else {
+      createNewTask(input)
+    }
   }
 
   const filtered = useMemo(
@@ -68,6 +92,13 @@ export default function Board() {
           onChange={(e) => setQuery(e.target.value)}
         />
         {searching && <span className="search-count">{filtered.length}개 결과</span>}
+        <button
+          type="button"
+          className="btn btn-primary add-btn"
+          onClick={() => setForm({ open: true, task: null })}
+        >
+          + 새 태스크
+        </button>
       </div>
 
       {viewTasks.length === 0 ? (
@@ -83,9 +114,30 @@ export default function Board() {
               status={col.status}
               tasks={byStatus[col.status]}
               onMove={moveTask}
+              onEdit={openEdit}
+              onDelete={requestDelete}
             />
           ))}
         </div>
+      )}
+
+      {form.open && (
+        <TaskFormModal
+          key={form.task?.id ?? 'new'}
+          task={form.task}
+          onSubmit={handleFormSubmit}
+          onClose={() => setForm({ open: false, task: null })}
+        />
+      )}
+      {deleteTarget && (
+        <ConfirmDialog
+          message={`‘${deleteTarget.title}’ 태스크를 삭제할까요?`}
+          onConfirm={() => {
+            removeTask(deleteTarget.id)
+            setDeleteTarget(null)
+          }}
+          onCancel={() => setDeleteTarget(null)}
+        />
       )}
       {toast && <Toast message={toast} onClose={dismissToast} />}
     </>
