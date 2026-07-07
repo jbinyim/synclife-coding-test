@@ -73,8 +73,12 @@ npm run build   # 타입체크(tsc --noEmit) + 프로덕션 빌드
 
 ## Git 규칙
 
-- **기능별 브랜치 → main 머지** 방식. main에 직접 커밋하지 않는다.
-  - 브랜치명: `feat/optimistic-move`, `fix/rollback-order`, `docs/decisions` 형식
+- **main에 직접 커밋·푸시 전면 금지.** 로컬에서 main에 머지한 뒤 main을 푸시하는 것도 금지.
+- 모든 작업은 **main 기점 새 브랜치**에서 진행한다:
+  1. 작업 시작: main 최신화(`git checkout main && git pull`) → `git checkout -b feat/xxx`
+  2. 브랜치에서 커밋 → **브랜치를 푸시** (`git push -u origin feat/xxx`)
+  3. PR을 만들어 main에 머지한다 (`gh pr create` → 확인 후 머지)
+- 브랜치명: `feat/optimistic-move`, `fix/rollback-order`, `docs/decisions` 형식
 - 커밋 메시지는 Conventional Commits(`feat:`, `fix:`, `test:`, `docs:`, `chore:` ...)를 따른다.
 - 작업 단위마다 의미 있는 커밋을 남긴다 (과제 요구: 10개 이상).
 
