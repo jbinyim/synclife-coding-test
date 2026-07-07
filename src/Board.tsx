@@ -1,6 +1,7 @@
-import { useMemo } from 'react'
+import { useDeferredValue, useMemo, useState } from 'react'
 import type { Task, Status } from './types'
 import { useTasks } from './hooks/useTasks'
+import { filterByTitle } from './lib/tasks'
 import { Column } from './components/Column'
 import { Toast } from './components/Toast'
 
@@ -13,16 +14,25 @@ const COLUMNS: { status: Status; title: string }[] = [
 export default function Board() {
   const { state, viewTasks, retry, mutateTask, toast, dismissToast } = useTasks()
 
+  const [query, setQuery] = useState('')
+  // 타이핑(급함)과 5,000개 필터링(덜 급함)의 우선순위를 분리해 입력이 끊기지 않게 한다
+  const deferredQuery = useDeferredValue(query)
+
   // 낙관적 이동: overlay 에 즉시 반영되고, 서버 전송·롤백은 useTasks 큐가 처리한다.
   const moveTask = (id: string, status: Status) => {
     mutateTask(id, { status })
   }
 
+  const filtered = useMemo(
+    () => filterByTitle(viewTasks, deferredQuery),
+    [viewTasks, deferredQuery],
+  )
+
   const byStatus = useMemo(() => {
     const map: Record<Status, Task[]> = { todo: [], 'in-progress': [], done: [] }
-    for (const t of viewTasks) map[t.status].push(t)
+    for (const t of filtered) map[t.status].push(t)
     return map
-  }, [viewTasks])
+  }, [filtered])
 
   if (state.phase === 'loading') {
     return (
@@ -44,25 +54,39 @@ export default function Board() {
     )
   }
 
-  if (viewTasks.length === 0) {
-    return (
-      <p className="board-state">등록된 태스크가 없습니다. 첫 태스크를 추가해 보세요.</p>
-    )
-  }
+  const searching = deferredQuery.trim().length > 0
 
   return (
     <>
-      <div className="board">
-        {COLUMNS.map((col) => (
-          <Column
-            key={col.status}
-            title={col.title}
-            status={col.status}
-            tasks={byStatus[col.status]}
-            onMove={moveTask}
-          />
-        ))}
+      <div className="toolbar">
+        <input
+          type="search"
+          className="search-input"
+          placeholder="제목으로 검색"
+          aria-label="태스크 제목 검색"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        {searching && <span className="search-count">{filtered.length}개 결과</span>}
       </div>
+
+      {viewTasks.length === 0 ? (
+        <p className="board-state">등록된 태스크가 없습니다. 첫 태스크를 추가해 보세요.</p>
+      ) : filtered.length === 0 ? (
+        <p className="board-state">‘{deferredQuery}’ 검색 결과가 없습니다.</p>
+      ) : (
+        <div className="board">
+          {COLUMNS.map((col) => (
+            <Column
+              key={col.status}
+              title={col.title}
+              status={col.status}
+              tasks={byStatus[col.status]}
+              onMove={moveTask}
+            />
+          ))}
+        </div>
+      )}
       {toast && <Toast message={toast} onClose={dismissToast} />}
     </>
   )

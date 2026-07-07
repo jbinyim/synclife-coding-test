@@ -69,6 +69,34 @@ body {
   background: var(--col-bg);
 }
 
+/* 검색 툴바 */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.search-input {
+  width: 280px;
+  padding: 7px 12px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--card-bg);
+  color: var(--text);
+}
+
+.search-input:focus {
+  outline: 2px solid #4c9aff;
+  outline-offset: -1px;
+}
+
+.search-count {
+  font-size: 13px;
+  color: var(--muted);
+}
+
 /* 실패 알림 토스트 */
 .toast {
   position: fixed;
@@ -135,10 +163,8 @@ body {
 }
 
 .column-body {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  /* 대량 렌더 시 컬럼이 무한정 길어지지 않도록 스크롤만 걸어둡니다. */
+  /* 가상화 스크롤 컨테이너. 간격은 카드의 margin-bottom 으로 처리한다
+     (flex gap 은 가상화의 높이 계산(ITEM_HEIGHT)과 어긋나므로 사용하지 않음) */
   max-height: 75vh;
   overflow-y: auto;
 }
@@ -151,6 +177,10 @@ body {
   border-left: 3px solid var(--border);
   cursor: grab;
   box-shadow: 0 1px 0 rgba(9, 30, 66, 0.08);
+  /* 가상화용 고정 높이. Column.tsx 의 ITEM_HEIGHT(74) = 높이 66 + 간격 8 */
+  height: 66px;
+  margin-bottom: 8px;
+  box-sizing: border-box;
 }
 
 .card.priority-high {
@@ -167,6 +197,10 @@ body {
   font-size: 14px;
   margin-bottom: 8px;
   line-height: 1.35;
+  /* 카드 높이 고정을 위해 제목은 1줄 말줄임 (전체 제목은 title 속성으로 확인 가능) */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .card-meta {
