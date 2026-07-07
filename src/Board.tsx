@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import type { Task, Status } from './types'
 import { useTasks } from './hooks/useTasks'
 import { Column } from './components/Column'
+import { Toast } from './components/Toast'
 
 const COLUMNS: { status: Status; title: string }[] = [
   { status: 'todo', title: 'To Do' },
@@ -10,22 +11,18 @@ const COLUMNS: { status: Status; title: string }[] = [
 ]
 
 export default function Board() {
-  const { state, retry, setTasks } = useTasks()
+  const { state, viewTasks, retry, mutateTask, toast, dismissToast } = useTasks()
 
-  // ⚠️ 서버에 저장하지 않고 로컬 상태만 바꾸는 "순진한" 이동입니다.
-  // TODO(P1): 낙관적 업데이트 + 실패 시 롤백 + 경쟁 상태 처리를 구현하세요.
-  //   - updateTask(id, { status, version }) 로 서버에 반영
-  //   - 실패(15%)하면 이전 상태로 되돌리고 사용자에게 알림
-  //   - 같은 카드를 빠르게 연속 이동해도 최종 상태가 서버와 일치하도록
+  // 낙관적 이동: overlay 에 즉시 반영되고, 서버 전송·롤백은 useTasks 큐가 처리한다.
   const moveTask = (id: string, status: Status) => {
-    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, status } : t)))
+    mutateTask(id, { status })
   }
 
   const byStatus = useMemo(() => {
     const map: Record<Status, Task[]> = { todo: [], 'in-progress': [], done: [] }
-    if (state.phase === 'ready') for (const t of state.tasks) map[t.status].push(t)
+    for (const t of viewTasks) map[t.status].push(t)
     return map
-  }, [state])
+  }, [viewTasks])
 
   if (state.phase === 'loading') {
     return (
@@ -47,23 +44,26 @@ export default function Board() {
     )
   }
 
-  if (state.tasks.length === 0) {
+  if (viewTasks.length === 0) {
     return (
       <p className="board-state">등록된 태스크가 없습니다. 첫 태스크를 추가해 보세요.</p>
     )
   }
 
   return (
-    <div className="board">
-      {COLUMNS.map((col) => (
-        <Column
-          key={col.status}
-          title={col.title}
-          status={col.status}
-          tasks={byStatus[col.status]}
-          onMove={moveTask}
-        />
-      ))}
-    </div>
+    <>
+      <div className="board">
+        {COLUMNS.map((col) => (
+          <Column
+            key={col.status}
+            title={col.title}
+            status={col.status}
+            tasks={byStatus[col.status]}
+            onMove={moveTask}
+          />
+        ))}
+      </div>
+      {toast && <Toast message={toast} onClose={dismissToast} />}
+    </>
   )
 }
