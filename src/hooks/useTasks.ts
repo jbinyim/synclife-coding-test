@@ -67,7 +67,14 @@ export function useTasks() {
         // cleanup(재시도·언마운트·StrictMode 재실행)으로 abort 된 요청의
         // 실패는 사용자에게 보여줄 에러가 아니다.
         if (controller.signal.aborted) return
-        const message = err instanceof Error ? err.message : '요청에 실패했습니다.'
+        // 네트워크 예외(TypeError)는 서버 오류와 같은 실패 경로로 처리하되,
+        // 사용자 안내 메시지만 구분한다. 정책 근거는 DECISIONS.md 5번.
+        const message =
+          err instanceof TypeError
+            ? '네트워크에 연결할 수 없습니다. 연결 상태를 확인한 뒤 다시 시도해 주세요.'
+            : err instanceof Error
+              ? err.message
+              : '요청에 실패했습니다.'
         setState({ phase: 'error', message })
       })
 

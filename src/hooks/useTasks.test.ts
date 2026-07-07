@@ -83,6 +83,17 @@ describe('useTasks — 로드 상태', () => {
     })
   })
 
+  it('네트워크 예외(TypeError)는 한국어 연결 안내 메시지로 구분한다', async () => {
+    mockedGetTasks.mockRejectedValue(new TypeError('Failed to fetch'))
+    const { result } = renderHook(() => useTasks())
+
+    await waitFor(() => expect(result.current.state.phase).toBe('error'))
+    expect(result.current.state).toMatchObject({
+      phase: 'error',
+      message: expect.stringContaining('네트워크에 연결할 수 없습니다'),
+    })
+  })
+
   it('retry() 는 다시 loading 부터 시작해 성공하면 ready 로 복구한다', async () => {
     mockedGetTasks.mockRejectedValueOnce(new Error('실패'))
     mockedGetTasks.mockResolvedValueOnce([make('a')])
