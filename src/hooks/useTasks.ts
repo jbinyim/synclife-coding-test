@@ -1,17 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { Task } from '../types'
-import { getTasks, updateTask, ApiError } from '../api/client'
+import type { Task, Priority, Status } from '../types'
+import { getTasks, createTask, updateTask, deleteTask, ApiError } from '../api/client'
 import {
-  applyOverlay,
   mergeOverlay,
   clearOverlay,
   upsertTask,
+  insertTask,
+  removeTaskById,
+  composeView,
   enqueue,
   settle,
   type Overlay,
   type QueueState,
   type TaskPatch,
 } from '../lib/optimistic'
+
+/** 생성 폼 입력. 제목·우선순위 필수, 설명 선택 (과제 명세) */
+export type NewTaskInput = {
+  title: string
+  priority: Priority
+  status: Status
+  description?: string
+}
 
 /**
  * 초기 로드 상태를 하나의 union으로 관리한다.
@@ -30,6 +40,10 @@ export function useTasks() {
 
   /** 아직 서버 확정을 받지 못한 낙관적 변경 (taskId → patch) */
   const [overlay, setOverlay] = useState<Overlay>(new Map())
+  /** 서버 확정 전의 낙관적 생성 (temp- id) */
+  const [pendingCreates, setPendingCreates] = useState<Task[]>([])
+  /** 서버 확정 전의 낙관적 삭제 (화면에서 숨김) */
+  const [pendingDeletes, setPendingDeletes] = useState<ReadonlySet<string>>(new Set())
   const [toast, setToast] = useState<string | null>(null)
 
   /**
@@ -43,6 +57,8 @@ export function useTasks() {
     setState({ phase: 'loading' })
     // 재로드 시 이전 낙관적 변경·큐는 의미가 없으므로 초기화
     setOverlay(new Map())
+    setPendingCreates([])
+    setPendingDeletes(new Set())
     queueRef.current = new Map()
 
     getTasks(controller.signal)
@@ -132,6 +148,8 @@ export function useTasks() {
       setOverlay((o) => clearOverlay(o, id))
       if (failed) {
         const title = titleOf(id)
+        // 그 사이 삭제되어 서버에도 화면에도 없는 태스크의 실패는 알릴 대상이 없다
+        if (!title && !conflicted) return
         if (conflicted) {
           // 409 는 "되돌림"이 아니라 서버 최신 상태로 "갱신"된 것 — 동작 그대로 알린다
           setToast(
@@ -159,6 +177,9 @@ export function useTasks() {
     (id: string, patch: TaskPatch) => {
       const current = stateRef.current
       if (current.phase !== 'ready') return
+      // 삭제 대기 중이거나 생성 확정 전(temp id → serverTasks 에 없음)인 태스크는
+      // 서버에 쓸 수 없으므로 차단한다. 정책 근거는 DECISIONS.md 6번.
+      if (pendingDeletesRef.current.has(id)) return
       const target = current.tasks.find((t) => t.id === id)
       if (!target) return
 
@@ -171,13 +192,103 @@ export function useTasks() {
     [run],
   )
 
-  const dismissToast = useCallback(() => setToast(null), [])
+  /** 알림용 제목 말줄임 (생성/삭제는 serverTasks 조회 대신 입력값을 그대로 쓴다) */
+  const shorten = (title: string) => (title.length > 20 ? `${title.slice(0, 20)}…` : title)
 
-  /** 화면용 목록: 서버 확정 상태 + 낙관적 overlay */
-  const viewTasks = useMemo(
-    () => (state.phase === 'ready' ? applyOverlay(state.tasks, overlay) : []),
-    [state, overlay],
+  /**
+   * 낙관적 생성: temp id 로 즉시 화면 맨 앞에 표시 → POST →
+   * 성공 시 서버 태스크(진짜 id·version)로 교체, 실패 시 임시 제거(=롤백) + 토스트.
+   */
+  const createNewTask = useCallback((input: NewTaskInput) => {
+    const now = new Date().toISOString()
+    const temp: Task = {
+      id: `temp-${crypto.randomUUID()}`,
+      title: input.title,
+      description: input.description,
+      status: input.status,
+      priority: input.priority,
+      tags: [],
+      createdAt: now,
+      updatedAt: now,
+      version: 0,
+    }
+    setPendingCreates((prev) => [temp, ...prev])
+
+    createTask(input)
+      .then((created) => {
+        setPendingCreates((prev) => prev.filter((t) => t.id !== temp.id))
+        setState((prev) =>
+          prev.phase === 'ready'
+            ? { phase: 'ready', tasks: insertTask(prev.tasks, created) }
+            : prev,
+        )
+      })
+      .catch(() => {
+        setPendingCreates((prev) => prev.filter((t) => t.id !== temp.id))
+        setToast(`‘${shorten(input.title)}’ 생성에 실패해 취소했습니다.`)
+      })
+  }, [])
+
+  /** mutateTask 가드용 미러 ref (이벤트 핸들러에서 최신 삭제 대기 목록 읽기) */
+  const pendingDeletesRef = useRef(pendingDeletes)
+  pendingDeletesRef.current = pendingDeletes
+
+  /**
+   * 낙관적 삭제: 화면에서 즉시 숨김 → DELETE →
+   * 성공 시 서버 상태에서 제거, 실패 시 숨김 해제(=복구) + 토스트.
+   */
+  const removeTask = useCallback(
+    (id: string) => {
+      const title = titleOf(id)
+      if (!title) return // 서버 확정 태스크가 아니면(temp 등) 삭제 불가
+      if (pendingDeletesRef.current.has(id)) return
+
+      setPendingDeletes((prev) => new Set(prev).add(id))
+
+      deleteTask(id)
+        .then(() => {
+          setState((prev) =>
+            prev.phase === 'ready'
+              ? { phase: 'ready', tasks: removeTaskById(prev.tasks, id) }
+              : prev,
+          )
+          setPendingDeletes((prev) => {
+            const next = new Set(prev)
+            next.delete(id)
+            return next
+          })
+        })
+        .catch(() => {
+          setPendingDeletes((prev) => {
+            const next = new Set(prev)
+            next.delete(id)
+            return next
+          })
+          setToast(`‘${title}’ 삭제에 실패해 복구했습니다.`)
+        })
+    },
+    [titleOf],
   )
 
-  return { state, viewTasks, retry, mutateTask, toast, dismissToast }
+  const dismissToast = useCallback(() => setToast(null), [])
+
+  /** 화면용 목록: 서버 확정 상태 + 이동/수정 overlay − 삭제 대기 + 생성 대기 */
+  const viewTasks = useMemo(
+    () =>
+      state.phase === 'ready'
+        ? composeView(state.tasks, overlay, pendingCreates, pendingDeletes)
+        : [],
+    [state, overlay, pendingCreates, pendingDeletes],
+  )
+
+  return {
+    state,
+    viewTasks,
+    retry,
+    mutateTask,
+    createNewTask,
+    removeTask,
+    toast,
+    dismissToast,
+  }
 }
