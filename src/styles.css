@@ -97,6 +97,145 @@ body {
   color: var(--muted);
 }
 
+/* 버튼 */
+.btn {
+  padding: 7px 14px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--card-bg);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: #0052cc;
+  border-color: #0052cc;
+  color: #fff;
+}
+
+.btn-danger {
+  background: var(--high);
+  border-color: var(--high);
+  color: #fff;
+}
+
+.add-btn {
+  margin-left: auto;
+}
+
+/* 모달 */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(9, 30, 66, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+
+.modal {
+  background: var(--card-bg);
+  border-radius: 8px;
+  padding: 20px;
+  width: 400px;
+  max-width: calc(100vw - 32px);
+  box-shadow: 0 8px 24px rgba(9, 30, 66, 0.3);
+}
+
+.modal-title {
+  margin: 0 0 16px;
+  font-size: 16px;
+}
+
+.field {
+  display: block;
+  margin-bottom: 12px;
+  flex: 1;
+}
+
+.field-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: var(--muted);
+}
+
+.required {
+  color: var(--high);
+  font-style: normal;
+}
+
+.field input,
+.field select,
+.field textarea {
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-sizing: border-box;
+  font-family: inherit;
+  background: var(--card-bg);
+  color: var(--text);
+}
+
+.field-row {
+  display: flex;
+  gap: 12px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.confirm-message {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+/* 카드 삭제 버튼 & 생성 대기 카드 */
+.card {
+  position: relative;
+}
+
+.card-title {
+  padding-right: 20px;
+}
+
+.card-delete {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px;
+}
+
+.card-delete:hover {
+  color: var(--high);
+}
+
+.card-pending {
+  opacity: 0.55;
+}
+
 /* 실패 알림 토스트 */
 .toast {
   position: fixed;

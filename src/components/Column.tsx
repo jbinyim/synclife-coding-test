@@ -12,9 +12,11 @@ interface Props {
   status: Status
   tasks: Task[]
   onMove: (id: string, status: Status) => void
+  onEdit: (task: Task) => void
+  onDelete: (task: Task) => void
 }
 
-export function Column({ title, status, tasks, onMove }: Props) {
+export function Column({ title, status, tasks, onMove, onEdit, onDelete }: Props) {
   const bodyRef = useRef<HTMLDivElement>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportHeight, setViewportHeight] = useState(0)
@@ -61,7 +63,7 @@ export function Column({ title, status, tasks, onMove }: Props) {
         ) : (
           <div style={{ paddingTop: padTop, paddingBottom: padBottom }}>
             {tasks.slice(start, end).map((t) => (
-              <Card key={t.id} task={t} />
+              <Card key={t.id} task={t} onEdit={onEdit} onDelete={onDelete} />
             ))}
           </div>
         )}
